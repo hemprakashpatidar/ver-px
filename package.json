@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "type": "module"
+  "type": "module",
   "builds": [
     { "src": "api/notion.js", "use": "@vercel/node" }
   ]
