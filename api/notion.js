@@ -1,11 +1,11 @@
 export default async function handler(req, res) {
-    const { NOTION_SECRET, DATABASE_ID } = process.env;
+    const { NOTION_SECRET, DATABASE_ID, DATABASE_ID_CC } = process.env;
   
     // Set CORS headers for all requests
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  
+
     // Handle preflight OPTIONS requests
     if (req.method === 'OPTIONS') {
       return res.status(200).end();
@@ -14,6 +14,9 @@ export default async function handler(req, res) {
     if (req.method !== 'GET') {
       return res.status(405).json({ message: 'Only GET allowed' });
     }
+
+    // Parse optional query parameter 'type'
+    const { type } = req.query;
 
     // Simple authentication check
     const authHeader = req.headers.authorization;
@@ -25,7 +28,7 @@ export default async function handler(req, res) {
     }
   
     try {
-      const notionRes = await fetch(`https://api.notion.com/v1/databases/${DATABASE_ID}/query`, {
+      const notionRes = await fetch(`https://api.notion.com/v1/databases/${type === 'cc' ? DATABASE_ID_CC : DATABASE_ID}/query`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${NOTION_SECRET}`,
