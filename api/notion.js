@@ -44,7 +44,12 @@ export default async function handler(req, res) {
         return res.status(notionRes.status).json(data);
       }
   
-      return res.status(200).json(data);
+      // Extract only properties from each result, keeping the results structure
+      const resultsWithPropertiesOnly = data.results.map(result => ({
+        properties: result.properties
+      }));
+  
+      return res.status(200).json({ results: resultsWithPropertiesOnly });
     } catch (error) {
       console.error('Notion Proxy Error:', error);
       res.status(500).json({ message: 'Internal Server Error', error: error.message });
