@@ -29,7 +29,7 @@ app.get('/api/notion', notionHandler);
 // For Vercel deployment
 export default app;
 
-// For local development
+// For local development (not used in Vercel)
 if (process.env.NODE_ENV !== 'production') {
   app.listen(port, () => {
     console.log(`Server listening on http://localhost:${port}`);
