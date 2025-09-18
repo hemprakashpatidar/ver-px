@@ -22,6 +22,13 @@ app.use((req, res, next) => {
   next();
 });
 
+// Root route
+app.get('/', (req, res) => {
+  res.json({ 
+    message: 'API Server Running',
+  });
+});
+
 // Mount routes using existing handlers
 app.post('/api/login', loginHandler);
 app.get('/api/notion', notionHandler);
