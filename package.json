@@ -1,7 +1,14 @@
 {
-  "version": 2,
+  "name": "ver-px",
+  "private": true,
   "type": "module",
-  "builds": [
-    { "src": "api/notion.js", "use": "@vercel/node" }
-  ]
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
+  }
 }
