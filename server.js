@@ -1,7 +1,9 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import loginHandler from './api/login.js';
+import registerHandler from './api/register.js';
 import notionHandler from './api/notion.js';
+import transactionHandler from './api/transaction.js';
 
 dotenv.config();
 
@@ -31,6 +33,8 @@ app.get('/', (req, res) => {
 
 // Mount routes using existing handlers
 app.post('/api/login', loginHandler);
+app.post('/api/register', registerHandler);
+app.post('/api/transaction', transactionHandler);
 app.get('/api/notion', notionHandler);
 
 // For Vercel deployment
