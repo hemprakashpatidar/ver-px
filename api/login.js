@@ -67,7 +67,7 @@ export default async function handler(req, res) {
       success: true,
       message: 'Login successful',
       user: {
-        username: user.properties.userName.title[0].plain_text,
+        userName: user.properties.userName.title[0].plain_text,
         uuid: user.properties.uuid.rich_text[0]?.plain_text,
         isMe: !!user.properties.isMe.number
       }
