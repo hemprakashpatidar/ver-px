@@ -35,7 +35,7 @@ app.get('/', (req, res) => {
 app.post('/api/login', loginHandler);
 app.post('/api/register', registerHandler);
 app.post('/api/transaction', transactionHandler);
-app.get('/api/notion', notionHandler);
+app.post('/api/notion', notionHandler);
 
 // For Vercel deployment
 export default app;
