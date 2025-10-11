@@ -1,4 +1,4 @@
-import { getDatabaseId, buildNotionFilter } from '../utils/utils.js';
+import { getDatabaseId, buildNotionFilter, getMonthFilterConfig } from '../utils/utils.js';
 export default async function handler(req, res) {
     const { NOTION_SECRET} = process.env;
   
@@ -17,7 +17,7 @@ export default async function handler(req, res) {
     }
 
     // Get parameters from body (POST)
-    const {isMe, type, uuid, userName } = req.body;
+    const {isMe, type, uuid, userName, month, year } = req.body;
 
     // Simple authentication check
     const authHeader = req.headers.authorization;
@@ -30,7 +30,8 @@ export default async function handler(req, res) {
     const databaseId = getDatabaseId(type, isMe);
     
     try {
-      const filter = buildNotionFilter(uuid, userName);
+      const {startDate, endDate} = getMonthFilterConfig(month, year)
+      const filter = buildNotionFilter(uuid, userName, startDate, endDate);
       
       // Build request body - only include filter if it exists
       const requestBody = { page_size: 100 };
