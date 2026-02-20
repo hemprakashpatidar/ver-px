@@ -4,7 +4,8 @@ import loginHandler from './api/login.js';
 import registerHandler from './api/register.js';
 import notionHandler from './api/notion.js';
 import transactionHandler from './api/transaction.js';
-
+import deleteTransactionHandler from './api/delete-transaction.js';
+import editTransactionHandler from './api/edit.js';
 dotenv.config();
 
 const app = express();
@@ -36,6 +37,8 @@ app.post('/api/login', loginHandler);
 app.post('/api/register', registerHandler);
 app.post('/api/transaction', transactionHandler);
 app.post('/api/notion', notionHandler);
+app.post('/api/delete-transaction', deleteTransactionHandler);
+app.post('/api/edit-transaction', editTransactionHandler);
 
 // For Vercel deployment
 export default app;

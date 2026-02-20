@@ -56,7 +56,8 @@ export default async function handler(req, res) {
   
       // Extract only properties from each result, keeping the results structure
       const resultsWithPropertiesOnly = data.results.map(result => ({
-        properties: result.properties
+        properties: result.properties,
+        id: result.id
       }));
       return res.status(200).json({ results: resultsWithPropertiesOnly });
     } catch (error) {
