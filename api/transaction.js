@@ -1,59 +1,19 @@
 import { getDatabaseId } from '../utils/utils.js';
 
 export default async function handler(req, res) {
-  // Set CORS headers
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-
-  // Handle preflight requests
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-
-  // Only allow POST requests
-  if (req.method !== 'POST') {
-    return res.status(405).json({ message: 'Method not allowed' });
-  }
-// check auth and check if user is there
-  const authHeader = req.headers.authorization;
-  if (!authHeader || authHeader !== 'Bearer authenticated') {
-    return res.status(401).json({ 
-      message: 'Authentication required. Please login first.' 
-    });
-  }
-  const { USER_TABLE_ID, NOTION_SECRET } = process.env;
+  const { uuid, userName, isMe } = req.user;
   const { 
     amount, 
     expense, 
     category, 
     paymentMethod, 
-    uuid, 
-    userName,
     date = new Date().toISOString().split('T')[0], // Default to today
-    isMe,
   } = req.body;
 
-  const users = await fetch(`https://api.notion.com/v1/databases/${USER_TABLE_ID}/query`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${NOTION_SECRET}`,
-      'Notion-Version': '2022-06-28',
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ page_size: 100 })
-  });
-  const usersRes = await users.json();
-  const user = usersRes.results.find(user => user.properties.userName.title[0].plain_text === userName && user.properties.uuid.rich_text[0]?.plain_text === uuid);
-  if (!user) {
-    return res.status(401).json({ 
-      message: 'User not found' 
-    });
-  }
   // Validate required fields
-  if (!amount || !expense || !category || !paymentMethod || !uuid || !userName) {
+  if (!amount || !expense || !category || !paymentMethod) {
     return res.status(400).json({ 
-      message: 'Missing required fields: amount, expense, category, paymentMethod, uuid, userName' 
+      message: 'Missing required fields: amount, expense, category, paymentMethod' 
     });
   }
 
@@ -62,7 +22,7 @@ export default async function handler(req, res) {
     const notionRes = await fetch(`https://api.notion.com/v1/pages`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${NOTION_SECRET}`,
+        'Authorization': `Bearer ${process.env.NOTION_SECRET}`,
         'Notion-Version': '2022-06-28',
         'Content-Type': 'application/json'
       },
@@ -99,8 +59,7 @@ export default async function handler(req, res) {
     if (!notionRes.ok) {
       console.error('Notion Error:', data);
       return res.status(notionRes.status).json({
-        message: 'Failed to create transaction',
-        error: data
+        message: 'Failed to create transaction'
       });
     }
 
@@ -112,17 +71,14 @@ export default async function handler(req, res) {
         expense,
         category,
         paymentMethod,
-        date,
-        uuid,
-        userName
+        date
       }
     });
 
   } catch (error) {
     console.error('Transaction Logging Error:', error);
     return res.status(500).json({ 
-      message: 'Internal Server Error', 
-      error: error.message 
+      message: 'Internal Server Error'
     });
   }
 }

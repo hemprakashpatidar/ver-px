@@ -1,53 +1,41 @@
 import crypto from 'crypto';
+import { findUserByName, createUser, hashPassword } from '../utils/users.js';
+
+const USERNAME_PATTERN = /^[a-zA-Z0-9_.-]{3,32}$/;
+const MIN_PASSWORD_LENGTH = 8;
+const MAX_PASSWORD_LENGTH = 72; // bcrypt ignores bytes beyond 72
 
 export default async function handler(req, res) {
-  const { username, password } = req.body;
-  const { NOTION_SECRET, USER_TABLE_ID } = process.env;
+  const { username, password } = req.body || {};
 
-  // Generate random UUID
-  const uuid = crypto.randomUUID();
-  
-  // Hash the password
-  const hashedPassword = crypto.createHash('sha256').update(password).digest('hex');
-
-  const users = await fetch(`https://api.notion.com/v1/databases/${USER_TABLE_ID}/query`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${NOTION_SECRET}`,
-      'Notion-Version': '2022-06-28',
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ page_size: 100 })
-  });
-  const usersRes = await users.json();
-  // check if user already exists
-  const user = usersRes.results.find(user => user.properties.userName.title[0].plain_text === username);
-  if (user) {
-    return res.status(400).json({ message: 'User already exists' });
+  if (typeof username !== 'string' || !USERNAME_PATTERN.test(username.trim())) {
+    return res.status(400).json({
+      message: 'Username must be 3-32 characters: letters, numbers, dot, dash or underscore.'
+    });
   }
-  // create user
-  const newUser = await fetch(`https://api.notion.com/v1/pages`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${NOTION_SECRET}`,
-      'Notion-Version': '2022-06-28',
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ 
-      parent: { database_id: USER_TABLE_ID },
-      properties: { 
-        userName: { title: [{ text: { content: username } }] },
-        password: { rich_text: [{ text: { content: hashedPassword } }] },
-        uuid: { rich_text: [{ text: { content: uuid } }] }
-      } 
-    })
-  });
-  // check if user created
-  const newUserRes = await newUser.json();
-  if (newUserRes.id) {
+  if (typeof password !== 'string' || password.length < MIN_PASSWORD_LENGTH || password.length > MAX_PASSWORD_LENGTH) {
+    return res.status(400).json({
+      message: `Password must be ${MIN_PASSWORD_LENGTH}-${MAX_PASSWORD_LENGTH} characters.`
+    });
+  }
+
+  const userName = username.trim();
+
+  try {
+    if (await findUserByName(userName)) {
+      return res.status(400).json({ message: 'User already exists' });
+    }
+
+    await createUser({
+      userName,
+      passwordHash: await hashPassword(password),
+      uuid: crypto.randomUUID()
+    });
+
     return res.status(200).json({ message: 'User created' });
-  }
-  return res.status(400).json({ message: 'User not created' }); 
- 
 
+  } catch (error) {
+    console.error('Register Error:', error);
+    return res.status(500).json({ message: 'User not created. Please try again.' });
+  }
 }

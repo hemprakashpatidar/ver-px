@@ -1,32 +1,8 @@
 export default async function handler(req, res) {
-    // Set CORS headers
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  
-    // Handle preflight requests
-    if (req.method === 'OPTIONS') {
-      return res.status(200).end();
-    }
-  
-    // Only allow POST requests
-    if (req.method !== 'POST') {
-      return res.status(405).json({ message: 'Method not allowed' });
-    }
-  
-    // Check auth
-    const authHeader = req.headers.authorization;
-    if (!authHeader || authHeader !== 'Bearer authenticated') {
-      return res.status(401).json({
-        message: 'Authentication required. Please login first.'
-      });
-    }
-  
-    const { USER_TABLE_ID, NOTION_SECRET } = process.env;
+    const { NOTION_SECRET } = process.env;
+    const { uuid, userName } = req.user;
     const {
       pageId,
-      uuid,
-      userName,
       expense,
       amount,
       category,
@@ -35,32 +11,16 @@ export default async function handler(req, res) {
     } = req.body;
   
     // Validate required fields
-    if (!pageId || !uuid || !userName || !expense || !amount || !category || !paymentMethod || !date) {
+    if (!pageId || !expense || !amount || !category || !paymentMethod || !date) {
       return res.status(400).json({
-        message: 'Missing required fields: pageId, uuid, userName, expense, amount, category, paymentMethod, date'
+        message: 'Missing required fields: pageId, expense, amount, category, paymentMethod, date'
       });
     }
   
-    // Verify user exists
-    const usersRes = await fetch(`https://api.notion.com/v1/databases/${USER_TABLE_ID}/query`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${NOTION_SECRET}`,
-        'Notion-Version': '2022-06-28',
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ page_size: 100 })
-    });
-    const usersData = await usersRes.json();
-    const user = usersData.results.find(
-      u =>
-        u.properties.userName.title[0].plain_text === userName &&
-        u.properties.uuid.rich_text[0]?.plain_text === uuid
-    );
-    if (!user) {
-      return res.status(401).json({ message: 'User not found' });
+    if (!/^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i.test(pageId)) {
+      return res.status(400).json({ message: 'Invalid pageId' });
     }
-  
+
     try {
       // Fetch the page to verify ownership
       const pageRes = await fetch(`https://api.notion.com/v1/pages/${pageId}`, {
@@ -121,8 +81,7 @@ export default async function handler(req, res) {
       if (!updateRes.ok) {
         console.error('Notion update error:', updateData);
         return res.status(updateRes.status).json({
-          message: 'Failed to update transaction',
-          error: updateData
+          message: 'Failed to update transaction'
         });
       }
   
@@ -142,8 +101,7 @@ export default async function handler(req, res) {
     } catch (error) {
       console.error('Edit Transaction Error:', error);
       return res.status(500).json({
-        message: 'Internal Server Error',
-        error: error.message
+        message: 'Internal Server Error'
       });
     }
   }

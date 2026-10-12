@@ -1,38 +1,22 @@
 import { getDatabaseId, buildNotionFilter, getMonthFilterConfig } from '../utils/utils.js';
 export default async function handler(req, res) {
     const { NOTION_SECRET} = process.env;
-  
-    // Set CORS headers for all requests
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS,POST");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 
-    // Handle preflight OPTIONS requests
-    if (req.method === 'OPTIONS') {
-      return res.status(200).end();
+    const { uuid, userName, isMe } = req.user;
+    const { type, month, year } = req.body;
+
+    const monthNum = Number(month);
+    const yearNum = Number(year);
+    if (!Number.isInteger(monthNum) || monthNum < 1 || monthNum > 12 || !Number.isInteger(yearNum)) {
+      return res.status(400).json({ message: 'Valid month (1-12) and year are required' });
     }
 
-    if (req.method !== 'POST') {
-      return res.status(405).json({ message: 'Only POST allowed' });
-    }
-
-    // Get parameters from body (POST)
-    const {isMe, type, uuid, userName, month, year } = req.body;
-
-    // Simple authentication check
-    const authHeader = req.headers.authorization;
-    
-    if (!authHeader || authHeader !== 'Bearer authenticated') {
-      return res.status(401).json({ 
-        message: 'Authentication required. Please login first.' 
-      });
-    }
     const databaseId = getDatabaseId(type, isMe);
-    
+
     try {
-      const {startDate, endDate} = getMonthFilterConfig(month, year)
+      const {startDate, endDate} = getMonthFilterConfig(monthNum, yearNum)
       const filter = buildNotionFilter(uuid, userName, startDate, endDate);
-      
+
       // Build request body - only include filter if it exists
       const requestBody = { page_size: 100 };
       if (filter) {
@@ -47,13 +31,14 @@ export default async function handler(req, res) {
         },
         body: JSON.stringify(requestBody)
       });
-  
+
       const data = await notionRes.json();
-  
+
       if (!notionRes.ok) {
-        return res.status(notionRes.status).json(data);
+        console.error('Notion query error:', data);
+        return res.status(502).json({ message: 'Failed to fetch transactions' });
       }
-  
+
       // Extract only properties from each result, keeping the results structure
       const resultsWithPropertiesOnly = data.results.map(result => ({
         properties: result.properties,
@@ -62,14 +47,6 @@ export default async function handler(req, res) {
       return res.status(200).json({ results: resultsWithPropertiesOnly });
     } catch (error) {
       console.error('Notion Proxy Error:', error);
-      
-      // Handle validation errors
-      if (error.message.includes('Both uuid and userName are required')) {
-        return res.status(400).json({ 
-          message: 'Both uuid and userName parameters are required for filtering' 
-        });
-      }
-      
-      res.status(500).json({ message: 'Internal Server Error', error: error.message });
+      res.status(500).json({ message: 'Internal Server Error' });
     }
   }

@@ -6,6 +6,7 @@ import notionHandler from './api/notion.js';
 import transactionHandler from './api/transaction.js';
 import deleteTransactionHandler from './api/delete-transaction.js';
 import editTransactionHandler from './api/edit.js';
+import { requireAuth } from './middleware/auth.js';
 dotenv.config();
 
 const app = express();
@@ -14,9 +15,18 @@ const port = process.env.PORT || 3000;
 // Basic JSON parsing
 app.use(express.json());
 
-// Minimal CORS to match handlers
+// CORS restricted to known frontends (comma-separated ALLOWED_ORIGINS overrides the default)
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'https://ver-px-fe.vercel.app,http://localhost:3000')
+  .split(',')
+  .map(origin => origin.trim())
+  .filter(Boolean);
+
 app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  const origin = req.headers.origin;
+  if (origin && allowedOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+  }
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   if (req.method === 'OPTIONS') {
@@ -35,10 +45,10 @@ app.get('/', (req, res) => {
 // Mount routes using existing handlers
 app.post('/api/login', loginHandler);
 app.post('/api/register', registerHandler);
-app.post('/api/transaction', transactionHandler);
-app.post('/api/notion', notionHandler);
-app.post('/api/delete-transaction', deleteTransactionHandler);
-app.post('/api/edit-transaction', editTransactionHandler);
+app.post('/api/transaction', requireAuth, transactionHandler);
+app.post('/api/notion', requireAuth, notionHandler);
+app.post('/api/delete-transaction', requireAuth, deleteTransactionHandler);
+app.post('/api/edit-transaction', requireAuth, editTransactionHandler);
 
 // For Vercel deployment
 export default app;
