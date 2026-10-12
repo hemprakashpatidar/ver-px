@@ -1,0 +1,48 @@
+import { z } from 'zod';
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+const NOTION_ID = /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i;
+
+// Notion select option names cannot contain commas
+const selectName = (label) => z.string().trim().min(1, `${label} is required`).max(100)
+  .refine(value => !value.includes(','), `${label} cannot contain commas`);
+
+export const loginSchema = z.object({
+  username: z.string().trim().min(1, 'Username is required'),
+  password: z.string().min(1, 'Password is required')
+});
+
+export const registerSchema = z.object({
+  username: z.string().trim().regex(
+    /^[a-zA-Z0-9_.-]{3,32}$/,
+    'Username must be 3-32 characters: letters, numbers, dot, dash or underscore.'
+  ),
+  // bcrypt ignores bytes beyond 72
+  password: z.string().min(8, 'Password must be 8-72 characters.').max(72, 'Password must be 8-72 characters.')
+});
+
+export const monthQuerySchema = z.object({
+  month: z.coerce.number().int().min(1).max(12),
+  year: z.coerce.number().int().min(2000).max(2100)
+});
+
+export const transactionIdSchema = z.object({
+  id: z.string().regex(NOTION_ID, 'Invalid transaction id')
+});
+
+const transactionFields = {
+  expense: z.string().trim().min(1, 'Expense is required').max(200),
+  amount: z.coerce.number().positive('Amount must be greater than 0').finite(),
+  category: selectName('Category'),
+  paymentMethod: selectName('Payment method'),
+  date: z.string().regex(ISO_DATE, 'Date must be YYYY-MM-DD')
+};
+
+export const createTransactionSchema = z.object({
+  ...transactionFields,
+  date: transactionFields.date.default(() => new Date().toISOString().split('T')[0])
+});
+
+export const updateTransactionSchema = z.object(transactionFields)
+  .partial()
+  .refine(changes => Object.keys(changes).length > 0, 'Provide at least one field to update');
