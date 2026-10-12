@@ -1,23 +1,32 @@
 import express from 'express';
 import dotenv from 'dotenv';
-import loginHandler from './api/login.js';
-import registerHandler from './api/register.js';
-import notionHandler from './api/notion.js';
-import transactionHandler from './api/transaction.js';
-import deleteTransactionHandler from './api/delete-transaction.js';
-import editTransactionHandler from './api/edit.js';
+import authRoutes from './routes/auth.js';
+import transactionRoutes from './routes/transactions.js';
+import { errorHandler, notFound } from './middleware/errorHandler.js';
 dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Vercel sits in front of the app; trust its X-Forwarded-For so rate limiting sees client IPs
+app.set('trust proxy', 1);
+
 // Basic JSON parsing
 app.use(express.json());
 
-// Minimal CORS to match handlers
+// CORS restricted to known frontends (comma-separated ALLOWED_ORIGINS overrides the default)
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'https://ver-px-fe.vercel.app,http://localhost:3000')
+  .split(',')
+  .map(origin => origin.trim())
+  .filter(Boolean);
+
 app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  const origin = req.headers.origin;
+  if (origin && allowedOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+  }
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   if (req.method === 'OPTIONS') {
     return res.sendStatus(200);
@@ -27,18 +36,16 @@ app.use((req, res, next) => {
 
 // Root route
 app.get('/', (req, res) => {
-  res.json({ 
+  res.json({
     message: 'API Server Running',
   });
 });
 
-// Mount routes using existing handlers
-app.post('/api/login', loginHandler);
-app.post('/api/register', registerHandler);
-app.post('/api/transaction', transactionHandler);
-app.post('/api/notion', notionHandler);
-app.post('/api/delete-transaction', deleteTransactionHandler);
-app.post('/api/edit-transaction', editTransactionHandler);
+app.use('/api/auth', authRoutes);
+app.use('/api/transactions', transactionRoutes);
+
+app.use(notFound);
+app.use(errorHandler);
 
 // For Vercel deployment
 export default app;
@@ -49,5 +56,3 @@ if (process.env.NODE_ENV !== 'production') {
     console.log(`Server listening on http://localhost:${port}`);
   });
 }
-
-
