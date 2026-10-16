@@ -19,6 +19,14 @@ export const errorHandler = (error, req, res, next) => {
     return res.status(400).json({ message: 'Request body must be valid JSON' });
   }
 
+  // Postgres constraint errors that slipped past validation: a bad reference or a duplicate
+  if (error.code === '23503') {
+    return res.status(400).json({ message: 'That refers to something that does not exist.' });
+  }
+  if (error.code === '23505') {
+    return res.status(409).json({ message: 'That already exists.' });
+  }
+
   console.error(`${req.method} ${req.originalUrl} failed:`, error);
 
   if (error instanceof NotionError) {

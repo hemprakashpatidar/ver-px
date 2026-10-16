@@ -2,6 +2,8 @@ import express from 'express';
 import dotenv from 'dotenv';
 import authRoutes from './routes/auth.js';
 import transactionRoutes from './routes/transactions.js';
+import peopleRoutes from './routes/people.js';
+import ledgerRoutes from './routes/ledger.js';
 import { errorHandler, notFound } from './middleware/errorHandler.js';
 dotenv.config();
 
@@ -43,6 +45,8 @@ app.get('/', (req, res) => {
 
 app.use('/api/auth', authRoutes);
 app.use('/api/transactions', transactionRoutes);
+app.use('/api/people', peopleRoutes);
+app.use('/api/ledger', ledgerRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
