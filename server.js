@@ -4,6 +4,7 @@ import authRoutes from './routes/auth.js';
 import transactionRoutes from './routes/transactions.js';
 import peopleRoutes from './routes/people.js';
 import ledgerRoutes from './routes/ledger.js';
+import ledgersRoutes from './routes/ledgers.js';
 import { errorHandler, notFound } from './middleware/errorHandler.js';
 dotenv.config();
 
@@ -47,6 +48,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/transactions', transactionRoutes);
 app.use('/api/people', peopleRoutes);
 app.use('/api/ledger', ledgerRoutes);
+app.use('/api/ledgers', ledgersRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

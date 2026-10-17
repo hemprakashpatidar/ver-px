@@ -58,16 +58,35 @@ const optionalText = (max) => z.string().trim().max(max).optional().transform(v 
 export const personIdSchema = z.object({ id: z.uuid('Invalid person id') });
 export const entryIdSchema = z.object({ id: z.uuid('Invalid id') });
 
+const includeArchived = z.enum(['true', 'false']).optional().transform(v => v === 'true');
+
 export const listPeopleQuerySchema = z.object({
-  includeArchived: z.enum(['true', 'false']).optional().transform(v => v === 'true'),
+  // Without it, people come from your default ledger
+  ledgerId: z.uuid('Invalid ledger id').optional(),
+  includeArchived,
 });
 
 const personName = z.string().trim().min(1, 'Name is required').max(80);
 
-export const createPersonSchema = z.object({ name: personName });
+export const createPersonSchema = z.object({
+  name: personName,
+  ledgerId: z.uuid('Invalid ledger id').optional(),
+});
 
 export const updatePersonSchema = z.object({
   name: personName.optional(),
+  archived: z.boolean().optional(),
+  // Moves the person, with their history, to another ledger
+  ledgerId: z.uuid('Invalid ledger id').optional(),
+}).refine(changes => Object.keys(changes).length > 0, 'Provide a name, archived, or ledgerId');
+
+const ledgerName = z.string().trim().min(1, 'Name is required').max(60);
+
+export const ledgerIdSchema = z.object({ id: z.uuid('Invalid ledger id') });
+export const listLedgersQuerySchema = z.object({ includeArchived });
+export const createLedgerSchema = z.object({ name: ledgerName });
+export const updateLedgerSchema = z.object({
+  name: ledgerName.optional(),
   archived: z.boolean().optional(),
 }).refine(changes => Object.keys(changes).length > 0, 'Provide a name or archived');
 

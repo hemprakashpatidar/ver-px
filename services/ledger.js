@@ -40,7 +40,7 @@ const BALANCES_SQL = `
       select to_person_id, paid_on from settlements where owner_id = $1
     ) activity group by person_id
   )
-  select pe.id, pe.name, pe.archived_at,
+  select pe.id, pe.name, pe.archived_at, pe.ledger_id, lg.name as ledger_name,
          coalesce(sh.total, 0) - coalesce(pd.total, 0) - coalesce(pb.total, 0) + coalesce(pt.total, 0) as balance_paise,
          la.day as last_activity_on
   from people pe
@@ -49,11 +49,13 @@ const BALANCES_SQL = `
   left join paid_back pb on pb.person_id = pe.id
   left join paid_to pt on pt.person_id = pe.id
   left join last_activity la on la.person_id = pe.id
+  left join ledgers lg on lg.id = pe.ledger_id
   where pe.owner_id = $1 and not pe.is_self`;
 
 const toPerson = (row) => ({
   id: row.id,
   name: row.name,
+  ledger: { id: row.ledger_id, name: row.ledger_name },
   archived: row.archived_at !== null,
   balance: toRupees(row.balance_paise),
   lastActivityOn: row.last_activity_on,
@@ -81,19 +83,135 @@ const ensureSelf = async (client, ownerId) => {
 // The person must be one of yours, still active, and not "you"
 const requireActivePerson = async (client, ownerId, personId) => {
   const { rows } = await client.query(
-    'select id, name from people where owner_id = $1 and id = $2 and not is_self and archived_at is null',
+    `select p.id, p.name, l.archived_at as ledger_archived_at
+     from people p join ledgers l on l.id = p.ledger_id
+     where p.owner_id = $1 and p.id = $2 and not p.is_self and p.archived_at is null`,
     [ownerId, personId]
   );
   if (!rows[0]) throw new HttpError(404, 'Person not found');
+  if (rows[0].ledger_archived_at) throw new HttpError(409, 'That ledger is archived. Restore it to add entries.');
   return rows[0];
+};
+
+// ── Ledgers ─────────────────────────────────────────────────────────────────
+
+const DEFAULT_LEDGER_NAME = 'Personal';
+
+const toLedger = (row) => ({ id: row.id, name: row.name, archived: row.archived_at !== null });
+
+// Your oldest active ledger, creating "Personal" the first time. The unique-name index
+// makes two simultaneous first requests agree on one ledger.
+const defaultLedger = async (db, ownerId) => {
+  const existing = await db.query(
+    'select id, name, archived_at from ledgers where owner_id = $1 and archived_at is null order by created_at limit 1',
+    [ownerId]
+  );
+  if (existing.rows[0]) return existing.rows[0];
+  await db.query(
+    `insert into ledgers (owner_id, name) values ($1, $2)
+     on conflict (owner_id, lower(btrim(name))) where archived_at is null do nothing`,
+    [ownerId, DEFAULT_LEDGER_NAME]
+  );
+  const created = await db.query(
+    'select id, name, archived_at from ledgers where owner_id = $1 and archived_at is null order by created_at limit 1',
+    [ownerId]
+  );
+  return created.rows[0];
+};
+
+// The requested ledger (must be yours), or your default one when none is given
+const resolveLedger = async (db, ownerId, ledgerId, { mustBeActive = false } = {}) => {
+  if (!ledgerId) return defaultLedger(db, ownerId);
+  const { rows } = await db.query(
+    'select id, name, archived_at from ledgers where owner_id = $1 and id = $2',
+    [ownerId, ledgerId]
+  );
+  if (!rows[0]) throw new HttpError(404, 'Ledger not found');
+  if (mustBeActive && rows[0].archived_at) throw new HttpError(409, 'That ledger is archived. Restore it first.');
+  return rows[0];
+};
+
+const duplicateLedger = (name) => new HttpError(409, `You already have a ledger called "${name}".`);
+
+// Every ledger with its totals, oldest first
+export const listLedgers = async (user, { includeArchived = false } = {}) => {
+  await defaultLedger({ query }, user.uuid);
+  const [ledgers, balances] = await Promise.all([
+    query(
+      `select id, name, archived_at from ledgers
+       where owner_id = $1 ${includeArchived ? '' : 'and archived_at is null'}
+       order by created_at`,
+      [user.uuid]
+    ),
+    query(`${BALANCES_SQL} and pe.archived_at is null`, [user.uuid]),
+  ]);
+
+  return ledgers.rows.map(ledger => {
+    const people = balances.rows.filter(p => p.ledger_id === ledger.id);
+    const owedToYou = people.reduce((sum, p) => sum + Math.max(p.balance_paise, 0), 0);
+    const youOwe = people.reduce((sum, p) => sum + Math.max(-p.balance_paise, 0), 0);
+    return {
+      ...toLedger(ledger),
+      peopleCount: people.length,
+      totals: { owedToYou: toRupees(owedToYou), youOwe: toRupees(youOwe) },
+    };
+  });
+};
+
+export const createLedger = async (user, { name }) => {
+  try {
+    const { rows } = await query(
+      'insert into ledgers (owner_id, name) values ($1, $2) returning id, name, archived_at',
+      [user.uuid, name]
+    );
+    return toLedger(rows[0]);
+  } catch (error) {
+    if (error.code === '23505') throw duplicateLedger(name);
+    throw error;
+  }
+};
+
+export const updateLedger = async (user, ledgerId, { name, archived }) => {
+  const ledger = await resolveLedger({ query }, user.uuid, ledgerId);
+
+  if (archived === true && !ledger.archived_at) {
+    const { rows: people } = await query(`${BALANCES_SQL} and pe.ledger_id = $2`, [user.uuid, ledgerId]);
+    if (people.some(p => p.balance_paise !== 0)) {
+      throw new HttpError(409, `Settle up with everyone in ${ledger.name} before archiving it.`);
+    }
+    const { rows } = await query(
+      'select count(*)::int as active from ledgers where owner_id = $1 and archived_at is null',
+      [user.uuid]
+    );
+    if (rows[0].active <= 1) throw new HttpError(409, 'You need at least one active ledger.');
+  }
+
+  try {
+    const { rows } = await query(
+      `update ledgers set
+         name = coalesce($3, name),
+         archived_at = case when $4::boolean is null then archived_at
+                            when $4 then coalesce(archived_at, now())
+                            else null end,
+         updated_at = now()
+       where owner_id = $1 and id = $2
+       returning id, name, archived_at`,
+      [user.uuid, ledgerId, name ?? null, archived ?? null]
+    );
+    return toLedger(rows[0]);
+  } catch (error) {
+    if (error.code === '23505') throw duplicateLedger(name ?? ledger.name);
+    throw error;
+  }
 };
 
 // ── People ──────────────────────────────────────────────────────────────────
 
-export const listPeople = async (user, { includeArchived = false } = {}) => {
+export const listPeople = async (user, { ledgerId, includeArchived = false } = {}) => {
+  const ledger = await resolveLedger({ query }, user.uuid, ledgerId);
   const { rows } = await query(
-    `${BALANCES_SQL} ${includeArchived ? '' : 'and pe.archived_at is null'}`,
-    [user.uuid]
+    `${BALANCES_SQL} and pe.ledger_id = $2 ${includeArchived ? '' : 'and pe.archived_at is null'}`,
+    [user.uuid, ledger.id]
   );
   const people = rows.map(toPerson)
     // People you're square with sink to the bottom; the rest by size of balance
@@ -101,18 +219,23 @@ export const listPeople = async (user, { includeArchived = false } = {}) => {
 
   const owedToYou = rows.reduce((sum, r) => sum + Math.max(r.balance_paise, 0), 0);
   const youOwe = rows.reduce((sum, r) => sum + Math.max(-r.balance_paise, 0), 0);
-  return { people, totals: { owedToYou: toRupees(owedToYou), youOwe: toRupees(youOwe) } };
+  return {
+    ledger: toLedger(ledger),
+    people,
+    totals: { owedToYou: toRupees(owedToYou), youOwe: toRupees(youOwe) },
+  };
 };
 
-const duplicateName = (name) => new HttpError(409, `You already have someone called "${name}".`);
+const duplicateName = (name) => new HttpError(409, `There's already someone called "${name}" in this ledger.`);
 
-export const createPerson = async (user, { name }) => {
+export const createPerson = async (user, { name, ledgerId }) => {
   try {
     const id = await withTransaction(async (client) => {
       await ensureSelf(client, user.uuid);
+      const ledger = await resolveLedger(client, user.uuid, ledgerId, { mustBeActive: true });
       const { rows } = await client.query(
-        'insert into people (owner_id, name) values ($1, $2) returning id',
-        [user.uuid, name]
+        'insert into people (owner_id, ledger_id, name) values ($1, $2, $3) returning id',
+        [user.uuid, ledger.id, name]
       );
       return rows[0].id;
     });
@@ -123,11 +246,13 @@ export const createPerson = async (user, { name }) => {
   }
 };
 
-export const updatePerson = async (user, personId, { name, archived }) => {
+// name, archive, or move to another ledger (their whole history moves with them)
+export const updatePerson = async (user, personId, { name, archived, ledgerId }) => {
   const current = await loadPerson(user.uuid, personId);
   if (archived === true && current.balance_paise !== 0) {
     throw new HttpError(409, `Settle up with ${current.name} before archiving them.`);
   }
+  if (ledgerId) await resolveLedger({ query }, user.uuid, ledgerId, { mustBeActive: true });
   try {
     await query(
       `update people set
@@ -135,9 +260,10 @@ export const updatePerson = async (user, personId, { name, archived }) => {
          archived_at = case when $4::boolean is null then archived_at
                             when $4 then coalesce(archived_at, now())
                             else null end,
+         ledger_id = coalesce($5, ledger_id),
          updated_at = now()
        where owner_id = $1 and id = $2 and not is_self`,
-      [user.uuid, personId, name ?? null, archived ?? null]
+      [user.uuid, personId, name ?? null, archived ?? null, ledgerId ?? null]
     );
   } catch (error) {
     if (error.code === '23505') throw duplicateName(name ?? current.name);
