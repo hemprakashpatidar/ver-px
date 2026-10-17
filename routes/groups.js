@@ -12,6 +12,7 @@ import {
   createGroupSettlementSchema,
 } from '../schemas.js';
 import * as groups from '../services/groups.js';
+import * as shares from '../services/groupShares.js';
 
 const router = Router();
 
@@ -51,6 +52,19 @@ router.post('/:id/settlements', validate({ params: groupIdSchema, body: createGr
 router.delete('/:id/settlements/:itemId', validate({ params: groupItemSchema }), asyncHandler(async (req, res) => {
   await groups.deleteGroupSettlement(req.user, req.params.id, req.params.itemId);
   res.status(204).end();
+}));
+
+// Read-only share link: see it, make a new one (the old stops working), or turn it off
+router.get('/:id/share', validate({ params: groupIdSchema }), asyncHandler(async (req, res) => {
+  res.json(await shares.getShareLink(req.user, req.params.id));
+}));
+
+router.post('/:id/share', validate({ params: groupIdSchema }), asyncHandler(async (req, res) => {
+  res.status(201).json(await shares.createShareLink(req.user, req.params.id));
+}));
+
+router.delete('/:id/share', validate({ params: groupIdSchema }), asyncHandler(async (req, res) => {
+  res.json(await shares.revokeShareLink(req.user, req.params.id));
 }));
 
 export default router;

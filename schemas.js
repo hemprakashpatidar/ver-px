@@ -196,3 +196,9 @@ export const createGroupSettlementSchema = z.object({
   date: isoDate,
   note: optionalText(200),
 });
+
+// ── Share links ─────────────────────────────────────────────────────────────
+
+export const shareTokenSchema = z.object({
+  token: z.string().regex(/^[A-Za-z0-9_-]{32}$/, 'This link isn\'t valid.'),
+});
