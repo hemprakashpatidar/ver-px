@@ -7,6 +7,8 @@ import ledgerRoutes from './routes/ledger.js';
 import ledgersRoutes from './routes/ledgers.js';
 import groupRoutes from './routes/groups.js';
 import sharedRoutes from './routes/shared.js';
+import inviteRoutes from './routes/invites.js';
+import sharedWithMeRoutes from './routes/sharedWithMe.js';
 import { errorHandler, notFound } from './middleware/errorHandler.js';
 dotenv.config();
 
@@ -54,6 +56,8 @@ app.use('/api/ledgers', ledgersRoutes);
 app.use('/api/groups', groupRoutes);
 // No login: read-only views behind share links
 app.use('/api/shared', sharedRoutes);
+app.use('/api/invites', inviteRoutes);
+app.use('/api/shared-with-me', sharedWithMeRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

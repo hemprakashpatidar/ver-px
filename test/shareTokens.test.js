@@ -24,3 +24,20 @@ test('hashes are stable and do not contain the token', () => {
   assert.equal(hashToken(token), hashToken(token));
   assert.ok(!hashToken(token).includes(token));
 });
+
+test('invite and share-link encryption keys are separate', async () => {
+  const { encryptToken: enc, decryptToken: dec } = await import('../lib/shareTokens.js');
+  process.env.JWT_SECRET = 'same-secret';
+  const token = newToken();
+  assert.equal(dec(enc(token, 'group-invites'), 'group-invites'), token);
+  assert.equal(dec(enc(token, 'group-invites'), 'group-share-links'), null);
+});
+
+test('member codes are stable per invite and differ between invites', async () => {
+  const { memberRef } = await import('../lib/shareTokens.js');
+  const person = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
+  const a = newToken();
+  assert.equal(memberRef(a, person), memberRef(a, person));
+  assert.match(memberRef(a, person), /^[A-Za-z0-9_-]{16}$/);
+  assert.notEqual(memberRef(a, person), memberRef(newToken(), person));
+});

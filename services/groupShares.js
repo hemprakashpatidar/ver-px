@@ -55,10 +55,69 @@ export const revokeShareLink = async (user, groupId) => {
   return { active: false };
 };
 
-// ── Viewer: the read-only group ─────────────────────────────────────────────
+// ── Read-only views ─────────────────────────────────────────────────────────
 
-// What anyone with the link sees. Only names and amounts: no internal ids, ledgers, or
-// whether the owner copied a share into their own expenses.
+// The group as an outsider sees it: only names and amounts, with opaque per-response ids
+// instead of database ids, and no ledgers or copied-share flags. With viewerPersonId (an
+// invited member), that member is "You" and gets their own share and position.
+export const buildGroupView = (data, { ownerName, viewerPersonId = null }) => {
+  const publicId = new Map(data.members.map((m, i) => [m.id, `m${i + 1}`]));
+  const idOf = (personId) => publicId.get(personId) ?? 'unknown';
+  const sumFor = (rows, id) => rows.filter(r => r.personId === id).reduce((sum, r) => sum + r.paise, 0);
+  const nameOf = (m) => (m.id === viewerPersonId ? 'You' : m.is_self ? ownerName : m.name);
+
+  const view = {
+    group: {
+      name: data.group.name,
+      emoji: data.group.emoji,
+      simplifyDebts: data.group.simplifyDebts,
+      archived: data.group.archived,
+      memberCount: data.members.length,
+      totalSpent: toRupees(data.expenses.reduce((sum, e) => sum + e.amount_paise, 0)),
+    },
+    members: data.members.map(m => ({
+      id: idOf(m.id),
+      name: nameOf(m),
+      isYou: m.id === viewerPersonId,
+      isOwner: m.is_self,
+      net: toRupees(data.nets.get(m.id) || 0),
+    })),
+    debts: data.debts.map(d => ({ from: idOf(d.from), to: idOf(d.to), amount: toRupees(d.paise) })),
+    activity: [
+      ...data.expenses.map((e, i) => ({
+        type: 'expense',
+        id: `e${i + 1}`,
+        description: e.description,
+        amount: toRupees(e.amount_paise),
+        date: e.spent_on,
+        splitType: e.split_type,
+        paidBy: e.payers.map(p => ({ memberId: idOf(p.personId), amount: toRupees(p.paise) })),
+        shares: e.shares.filter(sh => sh.paise > 0).map(sh => ({ memberId: idOf(sh.personId), amount: toRupees(sh.paise) })),
+        ...(viewerPersonId ? {
+          myShare: toRupees(sumFor(e.shares, viewerPersonId)),
+          myEffect: toRupees(sumFor(e.payers, viewerPersonId) - sumFor(e.shares, viewerPersonId)),
+        } : {}),
+        createdAt: e.created_at,
+      })),
+      ...data.settlements.map((st, i) => ({
+        type: 'settlement',
+        id: `s${i + 1}`,
+        from: idOf(st.from),
+        to: idOf(st.to),
+        amount: toRupees(st.paise),
+        date: st.paid_on,
+        note: st.note,
+        createdAt: st.created_at,
+      })),
+    ].sort((a, b) => b.date.localeCompare(a.date) || new Date(b.createdAt) - new Date(a.createdAt))
+      // createdAt only orders same-day items; viewers don't need it
+      .map(({ createdAt: _createdAt, ...item }) => item),
+  };
+  if (viewerPersonId) view.myNet = toRupees(data.nets.get(viewerPersonId) || 0);
+  return view;
+};
+
+// What anyone with the public link sees
 export const getSharedGroup = async (token) => {
   const { rows } = await query(
     `select l.owner_id, l.group_id, l.owner_name
@@ -72,50 +131,5 @@ export const getSharedGroup = async (token) => {
   const [data] = await loadGroups(link.owner_id, { groupIds: [link.group_id] });
   if (!data) throw new HttpError(404, 'This link isn\'t active any more. Ask for a new one.');
 
-  // Opaque per-response ids instead of database ids
-  const publicId = new Map(data.members.map((m, i) => [m.id, `m${i + 1}`]));
-  const idOf = (personId) => publicId.get(personId) ?? 'unknown';
-
-  return {
-    sharedBy: link.owner_name,
-    group: {
-      name: data.group.name,
-      emoji: data.group.emoji,
-      simplifyDebts: data.group.simplifyDebts,
-      archived: data.group.archived,
-      memberCount: data.members.length,
-      totalSpent: toRupees(data.expenses.reduce((sum, e) => sum + e.amount_paise, 0)),
-    },
-    members: data.members.map(m => ({
-      id: idOf(m.id),
-      name: m.is_self ? link.owner_name : m.name,
-      net: toRupees(data.nets.get(m.id) || 0),
-    })),
-    debts: data.debts.map(d => ({ from: idOf(d.from), to: idOf(d.to), amount: toRupees(d.paise) })),
-    activity: [
-      ...data.expenses.map((e, i) => ({
-        type: 'expense',
-        id: `e${i + 1}`,
-        description: e.description,
-        amount: toRupees(e.amount_paise),
-        date: e.spent_on,
-        splitType: e.split_type,
-        paidBy: e.payers.map(p => ({ memberId: idOf(p.personId), amount: toRupees(p.paise) })),
-        shares: e.shares.filter(s => s.paise > 0).map(s => ({ memberId: idOf(s.personId), amount: toRupees(s.paise) })),
-        createdAt: e.created_at,
-      })),
-      ...data.settlements.map((s, i) => ({
-        type: 'settlement',
-        id: `s${i + 1}`,
-        from: idOf(s.from),
-        to: idOf(s.to),
-        amount: toRupees(s.paise),
-        date: s.paid_on,
-        note: s.note,
-        createdAt: s.created_at,
-      })),
-    ].sort((a, b) => b.date.localeCompare(a.date) || new Date(b.createdAt) - new Date(a.createdAt))
-      // createdAt only orders same-day items; viewers don't need it
-      .map(({ createdAt: _createdAt, ...item }) => item),
-  };
+  return { sharedBy: link.owner_name, ...buildGroupView(data, { ownerName: link.owner_name }) };
 };

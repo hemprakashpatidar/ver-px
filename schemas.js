@@ -202,3 +202,9 @@ export const createGroupSettlementSchema = z.object({
 export const shareTokenSchema = z.object({
   token: z.string().regex(/^[A-Za-z0-9_-]{32}$/, 'This link isn\'t valid.'),
 });
+
+// ── Member invites ──────────────────────────────────────────────────────────
+
+export const claimInviteSchema = z.object({
+  memberRef: z.string().regex(/^[A-Za-z0-9_-]{16}$/, 'Pick who you are in the group'),
+});

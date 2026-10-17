@@ -13,6 +13,7 @@ import {
 } from '../schemas.js';
 import * as groups from '../services/groups.js';
 import * as shares from '../services/groupShares.js';
+import * as invites from '../services/groupInvites.js';
 
 const router = Router();
 
@@ -65,6 +66,25 @@ router.post('/:id/share', validate({ params: groupIdSchema }), asyncHandler(asyn
 
 router.delete('/:id/share', validate({ params: groupIdSchema }), asyncHandler(async (req, res) => {
   res.json(await shares.revokeShareLink(req.user, req.params.id));
+}));
+
+// Member invites: one link per group (14 days) that people use to log in and see the group
+router.get('/:id/invite', validate({ params: groupIdSchema }), asyncHandler(async (req, res) => {
+  res.json(await invites.getInvites(req.user, req.params.id));
+}));
+
+router.post('/:id/invite', validate({ params: groupIdSchema }), asyncHandler(async (req, res) => {
+  res.status(201).json({ invite: await invites.createInvite(req.user, req.params.id) });
+}));
+
+router.delete('/:id/invite', validate({ params: groupIdSchema }), asyncHandler(async (req, res) => {
+  res.json({ invite: await invites.revokeInvite(req.user, req.params.id) });
+}));
+
+// itemId is the member (person) whose access to remove
+router.delete('/:id/access/:itemId', validate({ params: groupItemSchema }), asyncHandler(async (req, res) => {
+  await invites.removeAccess(req.user, req.params.id, req.params.itemId);
+  res.status(204).end();
 }));
 
 export default router;
