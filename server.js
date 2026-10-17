@@ -4,6 +4,11 @@ import authRoutes from './routes/auth.js';
 import transactionRoutes from './routes/transactions.js';
 import peopleRoutes from './routes/people.js';
 import ledgerRoutes from './routes/ledger.js';
+import ledgersRoutes from './routes/ledgers.js';
+import groupRoutes from './routes/groups.js';
+import sharedRoutes from './routes/shared.js';
+import inviteRoutes from './routes/invites.js';
+import sharedWithMeRoutes from './routes/sharedWithMe.js';
 import { errorHandler, notFound } from './middleware/errorHandler.js';
 dotenv.config();
 
@@ -47,6 +52,12 @@ app.use('/api/auth', authRoutes);
 app.use('/api/transactions', transactionRoutes);
 app.use('/api/people', peopleRoutes);
 app.use('/api/ledger', ledgerRoutes);
+app.use('/api/ledgers', ledgersRoutes);
+app.use('/api/groups', groupRoutes);
+// No login: read-only views behind share links
+app.use('/api/shared', sharedRoutes);
+app.use('/api/invites', inviteRoutes);
+app.use('/api/shared-with-me', sharedWithMeRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

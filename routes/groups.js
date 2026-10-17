@@ -1,0 +1,90 @@
+import { Router } from 'express';
+import { asyncHandler } from '../lib/errors.js';
+import { requireAuth } from '../middleware/auth.js';
+import { validate } from '../middleware/validate.js';
+import {
+  groupIdSchema,
+  groupItemSchema,
+  listGroupsQuerySchema,
+  createGroupSchema,
+  updateGroupSchema,
+  createGroupExpenseSchema,
+  createGroupSettlementSchema,
+} from '../schemas.js';
+import * as groups from '../services/groups.js';
+import * as shares from '../services/groupShares.js';
+import * as invites from '../services/groupInvites.js';
+
+const router = Router();
+
+router.use(requireAuth);
+
+// Your groups with member count, total spent and your position in each
+router.get('/', validate({ query: listGroupsQuerySchema }), asyncHandler(async (req, res) => {
+  res.json({ groups: await groups.listGroups(req.user, req.query) });
+}));
+
+router.post('/', validate({ body: createGroupSchema }), asyncHandler(async (req, res) => {
+  res.status(201).json(await groups.createGroup(req.user, req.body));
+}));
+
+// One group: members with their nets, who should pay whom, and the activity
+router.get('/:id', validate({ params: groupIdSchema }), asyncHandler(async (req, res) => {
+  res.json(await groups.getGroup(req.user, req.params.id));
+}));
+
+// Rename, change emoji, switch "simplify debts", add members
+router.patch('/:id', validate({ params: groupIdSchema, body: updateGroupSchema }), asyncHandler(async (req, res) => {
+  res.json(await groups.updateGroup(req.user, req.params.id, req.body));
+}));
+
+router.post('/:id/expenses', validate({ params: groupIdSchema, body: createGroupExpenseSchema }), asyncHandler(async (req, res) => {
+  res.status(201).json(await groups.addGroupExpense(req.user, req.params.id, req.body));
+}));
+
+router.delete('/:id/expenses/:itemId', validate({ params: groupItemSchema }), asyncHandler(async (req, res) => {
+  res.json(await groups.deleteGroupExpense(req.user, req.params.id, req.params.itemId));
+}));
+
+router.post('/:id/settlements', validate({ params: groupIdSchema, body: createGroupSettlementSchema }), asyncHandler(async (req, res) => {
+  res.status(201).json(await groups.addGroupSettlement(req.user, req.params.id, req.body));
+}));
+
+router.delete('/:id/settlements/:itemId', validate({ params: groupItemSchema }), asyncHandler(async (req, res) => {
+  await groups.deleteGroupSettlement(req.user, req.params.id, req.params.itemId);
+  res.status(204).end();
+}));
+
+// Read-only share link: see it, make a new one (the old stops working), or turn it off
+router.get('/:id/share', validate({ params: groupIdSchema }), asyncHandler(async (req, res) => {
+  res.json(await shares.getShareLink(req.user, req.params.id));
+}));
+
+router.post('/:id/share', validate({ params: groupIdSchema }), asyncHandler(async (req, res) => {
+  res.status(201).json(await shares.createShareLink(req.user, req.params.id));
+}));
+
+router.delete('/:id/share', validate({ params: groupIdSchema }), asyncHandler(async (req, res) => {
+  res.json(await shares.revokeShareLink(req.user, req.params.id));
+}));
+
+// Member invites: one link per group (14 days) that people use to log in and see the group
+router.get('/:id/invite', validate({ params: groupIdSchema }), asyncHandler(async (req, res) => {
+  res.json(await invites.getInvites(req.user, req.params.id));
+}));
+
+router.post('/:id/invite', validate({ params: groupIdSchema }), asyncHandler(async (req, res) => {
+  res.status(201).json({ invite: await invites.createInvite(req.user, req.params.id) });
+}));
+
+router.delete('/:id/invite', validate({ params: groupIdSchema }), asyncHandler(async (req, res) => {
+  res.json({ invite: await invites.revokeInvite(req.user, req.params.id) });
+}));
+
+// itemId is the member (person) whose access to remove
+router.delete('/:id/access/:itemId', validate({ params: groupItemSchema }), asyncHandler(async (req, res) => {
+  await invites.removeAccess(req.user, req.params.id, req.params.itemId);
+  res.status(204).end();
+}));
+
+export default router;

@@ -58,16 +58,37 @@ const optionalText = (max) => z.string().trim().max(max).optional().transform(v 
 export const personIdSchema = z.object({ id: z.uuid('Invalid person id') });
 export const entryIdSchema = z.object({ id: z.uuid('Invalid id') });
 
+const includeArchived = z.enum(['true', 'false']).optional().transform(v => v === 'true');
+
 export const listPeopleQuerySchema = z.object({
-  includeArchived: z.enum(['true', 'false']).optional().transform(v => v === 'true'),
+  // Without it, people come from your default ledger
+  ledgerId: z.uuid('Invalid ledger id').optional(),
+  // Everyone across every ledger, e.g. to pick group members
+  allLedgers: z.enum(['true', 'false']).optional().transform(v => v === 'true'),
+  includeArchived,
 });
 
 const personName = z.string().trim().min(1, 'Name is required').max(80);
 
-export const createPersonSchema = z.object({ name: personName });
+export const createPersonSchema = z.object({
+  name: personName,
+  ledgerId: z.uuid('Invalid ledger id').optional(),
+});
 
 export const updatePersonSchema = z.object({
   name: personName.optional(),
+  archived: z.boolean().optional(),
+  // Moves the person, with their history, to another ledger
+  ledgerId: z.uuid('Invalid ledger id').optional(),
+}).refine(changes => Object.keys(changes).length > 0, 'Provide a name, archived, or ledgerId');
+
+const ledgerName = z.string().trim().min(1, 'Name is required').max(60);
+
+export const ledgerIdSchema = z.object({ id: z.uuid('Invalid ledger id') });
+export const listLedgersQuerySchema = z.object({ includeArchived });
+export const createLedgerSchema = z.object({ name: ledgerName });
+export const updateLedgerSchema = z.object({
+  name: ledgerName.optional(),
   archived: z.boolean().optional(),
 }).refine(changes => Object.keys(changes).length > 0, 'Provide a name or archived');
 
@@ -111,4 +132,79 @@ export const createSettlementSchema = z.object({
   amount: rupees,
   date: isoDate,
   note: optionalText(200),
+  // direct: one-to-one only; group: inside groupId; all: clear the combined balance
+  scope: z.enum(['direct', 'group', 'all']).default('direct'),
+  groupId: z.uuid('Invalid group id').optional(),
+}).refine(s => s.scope !== 'group' || s.groupId, { path: ['groupId'], message: 'Choose the group to settle in' });
+
+// ── Groups ──────────────────────────────────────────────────────────────────
+
+const groupName = z.string().trim().min(1, 'Name is required').max(60);
+const emoji = z.string().trim().max(16).optional().transform(v => v || undefined);
+const newNames = z.array(z.string().trim().min(1).max(80)).max(50).optional();
+const personIds = z.array(z.uuid('Invalid person id')).max(50).optional();
+
+export const groupIdSchema = z.object({ id: z.uuid('Invalid group id') });
+export const groupItemSchema = z.object({ id: z.uuid('Invalid group id'), itemId: z.uuid('Invalid id') });
+export const listGroupsQuerySchema = z.object({ includeArchived });
+
+export const createGroupSchema = z.object({
+  name: groupName,
+  emoji,
+  simplifyDebts: z.boolean().optional(),
+  memberIds: personIds,
+  newMemberNames: newNames,
+});
+
+export const updateGroupSchema = z.object({
+  name: groupName.optional(),
+  emoji: z.string().trim().max(16).nullable().optional(),
+  simplifyDebts: z.boolean().optional(),
+  memberIds: personIds,
+  newMemberNames: newNames,
+}).refine(changes => Object.keys(changes).length > 0, 'Nothing to change');
+
+export const createGroupExpenseSchema = z.object({
+  description: z.string().trim().min(1, 'Description is required').max(200),
+  amount: rupees,
+  date: isoDate,
+  paidById: z.uuid('Invalid person id'),
+  split: z.object({
+    type: z.enum(['equal', 'exact', 'percent', 'shares']),
+    // value: rupees (exact), a percentage (percent) or a weight (shares); unused for equal
+    participants: z.array(z.object({
+      personId: z.uuid('Invalid person id'),
+      value: z.coerce.number().finite().min(0).optional(),
+    })).min(1, 'Choose at least one person to split with').max(50),
+  }),
+  category: selectName('Category').optional(),
+  addMyShare: z.boolean().default(false),
+  paymentMethod: selectName('Payment method').optional(),
+}).superRefine((expense, ctx) => {
+  if (expense.addMyShare && !expense.category) {
+    ctx.addIssue({ code: 'custom', path: ['category'], message: 'Pick a category to add your share to expenses' });
+  }
+  if (expense.addMyShare && !expense.paymentMethod) {
+    ctx.addIssue({ code: 'custom', path: ['paymentMethod'], message: 'Pick a payment method to add your share to expenses' });
+  }
+});
+
+export const createGroupSettlementSchema = z.object({
+  fromPersonId: z.uuid('Invalid person id'),
+  toPersonId: z.uuid('Invalid person id'),
+  amount: rupees,
+  date: isoDate,
+  note: optionalText(200),
+});
+
+// ── Share links ─────────────────────────────────────────────────────────────
+
+export const shareTokenSchema = z.object({
+  token: z.string().regex(/^[A-Za-z0-9_-]{32}$/, 'This link isn\'t valid.'),
+});
+
+// ── Member invites ──────────────────────────────────────────────────────────
+
+export const claimInviteSchema = z.object({
+  memberRef: z.string().regex(/^[A-Za-z0-9_-]{16}$/, 'Pick who you are in the group'),
 });
